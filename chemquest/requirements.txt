@@ -1,16 +1,4 @@
-# Core
 streamlit==1.27.0
-
-# HTTP requests
 requests==2.31.0
 
-# Data handling
-pandas==2.1.1
-numpy==1.25.2
-
-# Optional: for faster JSON parsing or future features
-orjson==3.9.1
-
-# Ensure SSL/cert handling for PubChem/ChEMBL API requests
-certifi==2026.10.11
 
