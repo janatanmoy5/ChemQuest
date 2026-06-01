@@ -1,6 +1,7 @@
 streamlit
 requests
+pandas
+numpy
 torch
 transformers
-pandas
-rdkit-pypi
+rdkit
