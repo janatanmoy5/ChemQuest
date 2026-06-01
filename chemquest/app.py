@@ -2,7 +2,6 @@ import streamlit as st
 import requests
 import re
 import torch
-import numpy as np
 from transformers import AutoTokenizer, AutoModel
 
 # ==============================
@@ -51,6 +50,17 @@ CHEMICAL_CLASSES = {
 }
 
 # ==============================
+# SAFE CONVERSION
+# ==============================
+def safe_float(value):
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+# ==============================
 # PUBCHEM FUNCTIONS
 # ==============================
 def fetch_pubchem_basic(name):
@@ -61,6 +71,7 @@ def fetch_pubchem_basic(name):
 
     try:
         r = requests.get(url, timeout=20)
+
         if r.status_code != 200:
             return None
 
@@ -70,11 +81,13 @@ def fetch_pubchem_basic(name):
         return {
             "CID": cid,
             "Formula": p.get("MolecularFormula"),
-            "Weight": p.get("MolecularWeight"),
-            "XlogP": p.get("XLogP"),
+            "Weight": safe_float(p.get("MolecularWeight")),
+            "XlogP": safe_float(p.get("XLogP")),
             "SMILES": p.get("CanonicalSMILES"),
-            "Structure": f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/CID/{cid}/PNG"
-            if cid else None
+            "Structure": (
+                f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/CID/{cid}/PNG"
+                if cid else None
+            )
         }
 
     except Exception:
@@ -90,8 +103,19 @@ def fetch_pubchem_props(name):
 
     try:
         r = requests.get(url, timeout=20)
+
         if r.status_code == 200:
-            return r.json()["PropertyTable"]["Properties"][0]
+            props = r.json()["PropertyTable"]["Properties"][0]
+
+            return {
+                "HydrogenBondDonorCount": safe_float(props.get("HydrogenBondDonorCount")),
+                "HydrogenBondAcceptorCount": safe_float(props.get("HydrogenBondAcceptorCount")),
+                "TPSA": safe_float(props.get("TPSA")),
+                "RotatableBondCount": safe_float(props.get("RotatableBondCount")),
+                "HeavyAtomCount": safe_float(props.get("HeavyAtomCount")),
+                "Complexity": safe_float(props.get("Complexity")),
+            }
+
     except Exception:
         pass
 
@@ -100,11 +124,11 @@ def fetch_pubchem_props(name):
 
 def fetch_pubchem_class(cid):
     url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/{cid}/JSON"
-
     classes = []
 
     try:
         r = requests.get(url, timeout=20)
+
         if r.status_code != 200:
             return classes
 
@@ -129,6 +153,7 @@ def fetch_pubmed_refs(cid, limit=20):
 
     try:
         r = requests.get(url, timeout=20)
+
         if r.status_code != 200:
             return []
 
@@ -191,6 +216,7 @@ def generate_chemberta_embedding(smiles):
             outputs = chem_model(**inputs)
 
         embedding = outputs.last_hidden_state.mean(dim=1).numpy()[0]
+
         return embedding
 
     except Exception:
@@ -222,7 +248,6 @@ def simple_ai_summary(text):
     scored.sort(reverse=True)
 
     top_sentences = [sentence for score, sentence in scored[:3]]
-
     summary = ". ".join(top_sentences)
 
     if summary and not summary.endswith("."):
@@ -244,10 +269,10 @@ def infer_class(classes):
 
 
 def calculate_lipinski(data, props):
-    mw = data.get("Weight")
-    xlogp = data.get("XlogP")
-    hbd = props.get("HydrogenBondDonorCount")
-    hba = props.get("HydrogenBondAcceptorCount")
+    mw = safe_float(data.get("Weight"))
+    xlogp = safe_float(data.get("XlogP"))
+    hbd = safe_float(props.get("HydrogenBondDonorCount"))
+    hba = safe_float(props.get("HydrogenBondAcceptorCount"))
 
     rules = {
         "Molecular weight ≤ 500": mw is not None and mw <= 500,
@@ -256,7 +281,7 @@ def calculate_lipinski(data, props):
         "H-bond acceptors ≤ 10": hba is not None and hba <= 10
     }
 
-    passed = sum(rules.values())
+    passed = sum(1 for status in rules.values() if status)
 
     return rules, passed
 
@@ -272,7 +297,7 @@ Chemical Intelligence • PubChem • PubMed • ChemBERTa Molecular AI
 """, unsafe_allow_html=True)
 
 st.sidebar.title("ChemQuest AI")
-st.sidebar.write("Chemical model:")
+st.sidebar.write("Chemical AI model:")
 st.sidebar.code(CHEM_MODEL_NAME)
 
 compound = st.text_input(
@@ -287,6 +312,7 @@ if st.button("🔍 Search") and compound:
 
     if not basic:
         st.error("Compound not found. Please check the spelling.")
+
     else:
         props = fetch_pubchem_props(compound)
         classes = fetch_pubchem_class(basic["CID"])
@@ -327,8 +353,7 @@ if st.button("🔍 Search") and compound:
             st.subheader("Molecular Properties")
 
             for k, v in props.items():
-                if k != "CID":
-                    st.write(f"**{k}:** {v}")
+                st.write(f"**{k}:** {v}")
 
             st.markdown("### Lipinski Rule of Five")
 
@@ -344,12 +369,12 @@ if st.button("🔍 Search") and compound:
 
         with tab3:
             st.subheader("ChemBERTa Chemical AI Representation")
-
             st.write(f"**Model used:** `{CHEM_MODEL_NAME}`")
 
             if embedding is not None:
                 st.success("ChemBERTa molecular embedding generated successfully.")
                 st.write(f"**Embedding dimension:** {embedding.shape[0]}")
+
                 st.write("**First 20 embedding values:**")
                 st.dataframe(
                     {
