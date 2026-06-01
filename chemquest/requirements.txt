@@ -1,2 +1,5 @@
 streamlit
 requests
+torch
+transformers
+numpy
